@@ -1,0 +1,147 @@
+from googleapiclient.discovery import build
+from datetime import datetime
+import pandas as pd
+import os
+from typing import List, Dict
+
+class YouTubeAnalyzer:
+    def __init__(self, api_key: str):
+        """
+        Initialize the YouTube API client.
+        
+        Args:
+            api_key (str): Your YouTube Data API key
+        """
+        self.youtube = build('youtube', 'v3', developerKey=api_key)
+    
+    def search_channel(self, keyword: str) -> str:
+        """
+        Search for a YouTube channel using a keyword.
+        
+        Args:
+            keyword (str): Search keyword
+            
+        Returns:
+            str: Channel ID of the first result
+        """
+        request = self.youtube.search().list(
+            part="snippet",
+            q=keyword,
+            type="channel",
+            maxResults=1
+        )
+        response = request.execute()
+        
+        if not response['items']:
+            raise ValueError(f"No channel found for keyword: {keyword}")
+            
+        return response['items'][0]['id']['channelId']
+    
+    def get_recent_videos(self, channel_id: str, video_count: int = 7) -> List[Dict]:
+        """
+        Get the most recent videos from a channel with their statistics.
+        
+        Args:
+            channel_id (str): YouTube channel ID
+            video_count (int): Number of videos to retrieve
+            
+        Returns:
+            List[Dict]: List of video information and statistics
+        """
+        # First get video IDs
+        request = self.youtube.search().list(
+            part="snippet",
+            channelId=channel_id,
+            order="date",
+            type="video",
+            maxResults=video_count
+        )
+        response = request.execute()
+        
+        videos = []
+        for item in response['items']:
+            video_id = item['id']['videoId']
+            
+            # Get detailed statistics for each video
+            video_request = self.youtube.videos().list(
+                part="statistics,snippet",
+                id=video_id
+            )
+            video_response = video_request.execute()
+            
+            if video_response['items']:
+                video_data = video_response['items'][0]
+                videos.append({
+                    'title': video_data['snippet']['title'],
+                    'published_at': video_data['snippet']['publishedAt'],
+                    'views': int(video_data['statistics'].get('viewCount', 0)),
+                    'likes': int(video_data['statistics'].get('likeCount', 0)),
+                    'comments': int(video_data['statistics'].get('commentCount', 0)),
+                    'url': f"https://www.youtube.com/watch?v={video_id}"
+                })
+        
+        return videos
+    
+    def analyze_videos(self, videos: List[Dict]) -> pd.DataFrame:
+        """
+        Create a DataFrame with video statistics and calculate analytics.
+        
+        Args:
+            videos (List[Dict]): List of video information
+            
+        Returns:
+            pd.DataFrame: Analyzed video data
+        """
+        df = pd.DataFrame(videos)
+        
+        # Convert published_at to datetime
+        df['published_at'] = pd.to_datetime(df['published_at'])
+        
+        # Sort by published date
+        df = df.sort_values('published_at', ascending=False)
+        
+        # Calculate engagement metrics
+        df['engagement_rate'] = ((df['likes'] + df['comments']) / df['views'] * 100).round(2)
+        
+        return df
+
+def main():
+    # Replace with your API key
+    API_KEY = "YOUR_API_KEY"
+    
+    try:
+        # Initialize the analyzer
+        analyzer = YouTubeAnalyzer(API_KEY)
+        
+        # Get user input
+        keyword = input("Enter channel keyword to search: ")
+        
+        # Search for channel and get videos
+        channel_id = analyzer.search_channel(keyword)
+        videos = analyzer.get_recent_videos(channel_id)
+        
+        # Analyze videos
+        df = analyzer.analyze_videos(videos)
+        
+        # Display results
+        print("\nVideo Analysis Results:")
+        print("=" * 80)
+        for _, row in df.iterrows():
+            print(f"\nTitle: {row['title']}")
+            print(f"Published: {row['published_at'].strftime('%Y-%m-%d')}")
+            print(f"Views: {row['views']:,}")
+            print(f"Likes: {row['likes']:,}")
+            print(f"Comments: {row['comments']:,}")
+            print(f"Engagement Rate: {row['engagement_rate']}%")
+            print(f"URL: {row['url']}")
+            print("-" * 80)
+        
+        # Save to CSV
+        df.to_csv('youtube_analysis.csv', index=False)
+        print("\nAnalysis has been saved to 'youtube_analysis.csv'")
+        
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+if __name__ == "__main__":
+    main()
