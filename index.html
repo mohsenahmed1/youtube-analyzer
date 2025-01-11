@@ -1,147 +1,188 @@
-from googleapiclient.discovery import build
-from datetime import datetime
-import pandas as pd
-import os
-from typing import List, Dict
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Channel Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
 
-class YouTubeAnalyzer:
-    def __init__(self, api_key: str):
-        """
-        Initialize the YouTube API client.
-        
-        Args:
-            api_key (str): Your YouTube Data API key
-        """
-        self.youtube = build('youtube', 'v3', developerKey=api_key)
-    
-    def search_channel(self, keyword: str) -> str:
-        """
-        Search for a YouTube channel using a keyword.
-        
-        Args:
-            keyword (str): Search keyword
-            
-        Returns:
-            str: Channel ID of the first result
-        """
-        request = self.youtube.search().list(
-            part="snippet",
-            q=keyword,
-            type="channel",
-            maxResults=1
-        )
-        response = request.execute()
-        
-        if not response['items']:
-            raise ValueError(f"No channel found for keyword: {keyword}")
-            
-        return response['items'][0]['id']['channelId']
-    
-    def get_recent_videos(self, channel_id: str, video_count: int = 7) -> List[Dict]:
-        """
-        Get the most recent videos from a channel with their statistics.
-        
-        Args:
-            channel_id (str): YouTube channel ID
-            video_count (int): Number of videos to retrieve
-            
-        Returns:
-            List[Dict]: List of video information and statistics
-        """
-        # First get video IDs
-        request = self.youtube.search().list(
-            part="snippet",
-            channelId=channel_id,
-            order="date",
-            type="video",
-            maxResults=video_count
-        )
-        response = request.execute()
-        
-        videos = []
-        for item in response['items']:
-            video_id = item['id']['videoId']
-            
-            # Get detailed statistics for each video
-            video_request = self.youtube.videos().list(
-                part="statistics,snippet",
-                id=video_id
-            )
-            video_response = video_request.execute()
-            
-            if video_response['items']:
-                video_data = video_response['items'][0]
-                videos.append({
-                    'title': video_data['snippet']['title'],
-                    'published_at': video_data['snippet']['publishedAt'],
-                    'views': int(video_data['statistics'].get('viewCount', 0)),
-                    'likes': int(video_data['statistics'].get('likeCount', 0)),
-                    'comments': int(video_data['statistics'].get('commentCount', 0)),
-                    'url': f"https://www.youtube.com/watch?v={video_id}"
-                })
-        
-        return videos
-    
-    def analyze_videos(self, videos: List[Dict]) -> pd.DataFrame:
-        """
-        Create a DataFrame with video statistics and calculate analytics.
-        
-        Args:
-            videos (List[Dict]): List of video information
-            
-        Returns:
-            pd.DataFrame: Analyzed video data
-        """
-        df = pd.DataFrame(videos)
-        
-        # Convert published_at to datetime
-        df['published_at'] = pd.to_datetime(df['published_at'])
-        
-        # Sort by published date
-        df = df.sort_values('published_at', ascending=False)
-        
-        # Calculate engagement metrics
-        df['engagement_rate'] = ((df['likes'] + df['comments']) / df['views'] * 100).round(2)
-        
-        return df
+    <script type="text/babel">
+        function App() {
+            const [apiKey, setApiKey] = React.useState('');
+            const [keyword, setKeyword] = React.useState('');
+            const [videos, setVideos] = React.useState([]);
+            const [loading, setLoading] = React.useState(false);
+            const [error, setError] = React.useState('');
 
-def main():
-    # Replace with your API key
-    API_KEY = "YOUR_API_KEY"
-    
-    try:
-        # Initialize the analyzer
-        analyzer = YouTubeAnalyzer(API_KEY)
-        
-        # Get user input
-        keyword = input("Enter channel keyword to search: ")
-        
-        # Search for channel and get videos
-        channel_id = analyzer.search_channel(keyword)
-        videos = analyzer.get_recent_videos(channel_id)
-        
-        # Analyze videos
-        df = analyzer.analyze_videos(videos)
-        
-        # Display results
-        print("\nVideo Analysis Results:")
-        print("=" * 80)
-        for _, row in df.iterrows():
-            print(f"\nTitle: {row['title']}")
-            print(f"Published: {row['published_at'].strftime('%Y-%m-%d')}")
-            print(f"Views: {row['views']:,}")
-            print(f"Likes: {row['likes']:,}")
-            print(f"Comments: {row['comments']:,}")
-            print(f"Engagement Rate: {row['engagement_rate']}%")
-            print(f"URL: {row['url']}")
-            print("-" * 80)
-        
-        # Save to CSV
-        df.to_csv('youtube_analysis.csv', index=False)
-        print("\nAnalysis has been saved to 'youtube_analysis.csv'")
-        
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
+            const searchChannel = async () => {
+                try {
+                    setLoading(true);
+                    setError('');
+                    
+                    // Search for channel
+                    const searchResponse = await fetch(
+                        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${keyword}&type=channel&maxResults=1&key=${apiKey}`
+                    );
+                    const searchData = await searchResponse.json();
+                    
+                    if (!searchData.items?.length) {
+                        throw new Error('No channel found');
+                    }
 
-if __name__ == "__main__":
-    main()
+                    const channelId = searchData.items[0].id.channelId;
+
+                    // Get recent videos
+                    const videosResponse = await fetch(
+                        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=7&key=${apiKey}`
+                    );
+                    const videosData = await videosResponse.json();
+
+                    // Get statistics for each video
+                    const videoStats = await Promise.all(
+                        videosData.items.map(async (item) => {
+                            const statsResponse = await fetch(
+                                `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${item.id.videoId}&key=${apiKey}`
+                            );
+                            const statsData = await statsResponse.json();
+                            
+                            return {
+                                title: item.snippet.title,
+                                publishedAt: new Date(item.snippet.publishedAt).toLocaleDateString(),
+                                views: parseInt(statsData.items[0].statistics.viewCount),
+                                likes: parseInt(statsData.items[0].statistics.likeCount),
+                                comments: parseInt(statsData.items[0].statistics.commentCount),
+                                url: `https://www.youtube.com/watch?v=${item.id.videoId}`
+                            };
+                        })
+                    );
+
+                    setVideos(videoStats);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const downloadCSV = () => {
+                const headers = ['Title', 'Published Date', 'Views', 'Likes', 'Comments', 'URL'];
+                const csvContent = [
+                    headers.join(','),
+                    ...videos.map(video => 
+                        [
+                            `"${video.title}"`,
+                            video.publishedAt,
+                            video.views,
+                            video.likes,
+                            video.comments,
+                            video.url
+                        ].join(',')
+                    )
+                ].join('\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'youtube-analysis.csv';
+                a.click();
+            };
+
+            return (
+                <div className="container mx-auto px-4 py-8 max-w-4xl">
+                    <h1 className="text-3xl font-bold mb-8 text-center">YouTube Channel Analyzer</h1>
+                    
+                    <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+                        <div className="mb-4">
+                            <label className="block text-gray-700 mb-2">YouTube API Key:</label>
+                            <input 
+                                type="text"
+                                value={apiKey}
+                                onChange={(e) => setApiKey(e.target.value)}
+                                className="w-full p-2 border rounded"
+                                placeholder="Enter your API key"
+                            />
+                        </div>
+                        
+                        <div className="mb-4">
+                            <label className="block text-gray-700 mb-2">Channel Keyword:</label>
+                            <input 
+                                type="text"
+                                value={keyword}
+                                onChange={(e) => setKeyword(e.target.value)}
+                                className="w-full p-2 border rounded"
+                                placeholder="Enter channel name or keyword"
+                            />
+                        </div>
+                        
+                        <button 
+                            onClick={searchChannel}
+                            disabled={loading || !apiKey || !keyword}
+                            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-gray-400"
+                        >
+                            {loading ? 'Loading...' : 'Analyze Channel'}
+                        </button>
+                    </div>
+
+                    {error && (
+                        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-8">
+                            {error}
+                        </div>
+                    )}
+
+                    {videos.length > 0 && (
+                        <div className="bg-white rounded-lg shadow-md p-6">
+                            <div className="flex justify-between mb-4">
+                                <h2 className="text-xl font-bold">Analysis Results</h2>
+                                <button 
+                                    onClick={downloadCSV}
+                                    className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                                >
+                                    Download CSV
+                                </button>
+                            </div>
+                            
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="bg-gray-50">
+                                            <th className="p-2 text-left">Title</th>
+                                            <th className="p-2 text-left">Published</th>
+                                            <th className="p-2 text-right">Views</th>
+                                            <th className="p-2 text-right">Likes</th>
+                                            <th className="p-2 text-right">Comments</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {videos.map((video, index) => (
+                                            <tr key={index} className="border-t">
+                                                <td className="p-2">
+                                                    <a href={video.url} target="_blank" className="text-blue-500 hover:underline">
+                                                        {video.title}
+                                                    </a>
+                                                </td>
+                                                <td className="p-2">{video.publishedAt}</td>
+                                                <td className="p-2 text-right">{video.views.toLocaleString()}</td>
+                                                <td className="p-2 text-right">{video.likes.toLocaleString()}</td>
+                                                <td className="p-2 text-right">{video.comments.toLocaleString()}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
