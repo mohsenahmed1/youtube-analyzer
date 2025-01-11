@@ -35,7 +35,7 @@
 
                     // Search for channels
                     const searchResponse = await fetch(
-                        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${keyword}&type=channel&maxResults=30&key=${apiKey}`
+                        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${keyword}&type=channel&maxResults=50&key=${apiKey}`
                     );
                     const searchData = await searchResponse.json();
 
@@ -51,17 +51,30 @@
                             );
                             const detailsData = await detailsResponse.json();
                             const channel = detailsData.items[0];
-                            return {
-                                id: channel.id,
-                                title: channel.snippet.title,
-                                subscribers: channel.statistics.subscriberCount || 'N/A',
-                                email: channel.snippet?.customUrl || 'Email not available',
-                                thumbnail: channel.snippet.thumbnails.default.url,
-                            };
+
+                            const subscribers = parseInt(channel.statistics.subscriberCount);
+
+                            // Only include channels with more than 300,000 subscribers
+                            if (subscribers > 300000) {
+                                return {
+                                    id: channel.id,
+                                    title: channel.snippet.title,
+                                    subscribers,
+                                    thumbnail: channel.snippet.thumbnails.default.url,
+                                };
+                            }
+                            return null;
                         })
                     );
 
-                    setChannels(channelDetails);
+                    // Filter null values and limit results to 30
+                    const filteredChannels = channelDetails.filter(Boolean).slice(0, 30);
+
+                    if (!filteredChannels.length) {
+                        throw new Error('No channels with more than 300,000 subscribers found.');
+                    }
+
+                    setChannels(filteredChannels);
                 } catch (err) {
                     setError(err.message);
                 } finally {
@@ -152,7 +165,7 @@
                     {channels.length > 0 && !selectedChannelId && (
                         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
                             <h2 className="text-xl font-bold mb-4">Select a Channel</h2>
-                            <ul>
+                            <ul className="select-all">
                                 {channels.map((channel) => (
                                     <li 
                                         key={channel.id}
@@ -169,8 +182,7 @@
                                         />
                                         <div>
                                             <p className="text-lg font-semibold">{channel.title}</p>
-                                            <p className="text-sm text-gray-600">Subscribers: {parseInt(channel.subscribers).toLocaleString()}</p>
-                                            <p className="text-sm text-gray-600">Email: {channel.email}</p>
+                                            <p className="text-sm text-gray-600">Subscribers: {channel.subscribers.toLocaleString()}</p>
                                         </div>
                                     </li>
                                 ))}
@@ -181,7 +193,24 @@
                     {videos.length > 0 && selectedChannelId && (
                         <div className="bg-white rounded-lg shadow-md p-6">
                             <h2 className="text-xl font-bold mb-4">Analysis Results</h2>
-                            {/* Existing Video Analysis Section */}
+                            <button 
+                                className="bg-gray-200 text-gray-800 p-2 rounded mb-4"
+                                onClick={() => setSelectedChannelId(null)}
+                            >
+                                Back to Channel List
+                            </button>
+                            <ul className="select-all">
+                                {videos.map((video, index) => (
+                                    <li key={index} className="p-4 border-b">
+                                        <p className="font-semibold">{video.title}</p>
+                                        <p>Published: {video.publishedAt}</p>
+                                        <p>Views: {video.views.toLocaleString()}</p>
+                                        <p>Likes: {video.likes.toLocaleString()}</p>
+                                        <p>Comments: {video.comments.toLocaleString()}</p>
+                                        <a href={video.url} target="_blank" className="text-blue-500">Watch on YouTube</a>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     )}
                 </div>
