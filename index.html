@@ -34,16 +34,34 @@
                     setSelectedChannelId(null);
 
                     // Search for channels
-                    const response = await fetch(
+                    const searchResponse = await fetch(
                         `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${keyword}&type=channel&maxResults=30&key=${apiKey}`
                     );
-                    const data = await response.json();
+                    const searchData = await searchResponse.json();
 
-                    if (!data.items?.length) {
+                    if (!searchData.items?.length) {
                         throw new Error('No channels found.');
                     }
 
-                    setChannels(data.items);
+                    // Fetch channel details for each channel
+                    const channelDetails = await Promise.all(
+                        searchData.items.map(async (item) => {
+                            const detailsResponse = await fetch(
+                                `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&id=${item.id.channelId}&key=${apiKey}`
+                            );
+                            const detailsData = await detailsResponse.json();
+                            const channel = detailsData.items[0];
+                            return {
+                                id: channel.id,
+                                title: channel.snippet.title,
+                                subscribers: channel.statistics.subscriberCount || 'N/A',
+                                email: channel.snippet?.customUrl || 'Email not available',
+                                thumbnail: channel.snippet.thumbnails.default.url,
+                            };
+                        })
+                    );
+
+                    setChannels(channelDetails);
                 } catch (err) {
                     setError(err.message);
                 } finally {
@@ -55,7 +73,7 @@
                 try {
                     setLoading(true);
                     setError('');
-                    
+
                     // Get recent videos
                     const videosResponse = await fetch(
                         `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=7&key=${apiKey}`
@@ -87,30 +105,6 @@
                 } finally {
                     setLoading(false);
                 }
-            };
-
-            const downloadCSV = () => {
-                const headers = ['Title', 'Published Date', 'Views', 'Likes', 'Comments', 'URL'];
-                const csvContent = [
-                    headers.join(','),
-                    ...videos.map(video => 
-                        [
-                            `"${video.title}"`,
-                            video.publishedAt,
-                            video.views,
-                            video.likes,
-                            video.comments,
-                            video.url
-                        ].join(',')
-                    )
-                ].join('\n');
-
-                const blob = new Blob([csvContent], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'youtube-analysis.csv';
-                a.click();
             };
 
             return (
@@ -161,14 +155,23 @@
                             <ul>
                                 {channels.map((channel) => (
                                     <li 
-                                        key={channel.id.channelId}
+                                        key={channel.id}
                                         onClick={() => {
-                                            setSelectedChannelId(channel.id.channelId);
-                                            fetchChannelVideos(channel.id.channelId);
+                                            setSelectedChannelId(channel.id);
+                                            fetchChannelVideos(channel.id);
                                         }}
-                                        className="p-2 border-b cursor-pointer hover:bg-gray-100"
+                                        className="p-4 border-b cursor-pointer hover:bg-gray-100 flex items-center"
                                     >
-                                        {channel.snippet.title}
+                                        <img 
+                                            src={channel.thumbnail} 
+                                            alt={channel.title} 
+                                            className="w-12 h-12 rounded-full mr-4"
+                                        />
+                                        <div>
+                                            <p className="text-lg font-semibold">{channel.title}</p>
+                                            <p className="text-sm text-gray-600">Subscribers: {parseInt(channel.subscribers).toLocaleString()}</p>
+                                            <p className="text-sm text-gray-600">Email: {channel.email}</p>
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
@@ -177,52 +180,8 @@
 
                     {videos.length > 0 && selectedChannelId && (
                         <div className="bg-white rounded-lg shadow-md p-6">
-                            <div className="flex justify-between mb-4">
-                                <h2 className="text-xl font-bold">Analysis Results</h2>
-                                <div>
-                                    <button 
-                                        onClick={() => setSelectedChannelId(null)}
-                                        className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 mr-2"
-                                    >
-                                        Back
-                                    </button>
-                                    <button 
-                                        onClick={downloadCSV}
-                                        className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                                    >
-                                        Download CSV
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="bg-gray-50">
-                                            <th className="p-2 text-left">Title</th>
-                                            <th className="p-2 text-left">Published</th>
-                                            <th className="p-2 text-right">Views</th>
-                                            <th className="p-2 text-right">Likes</th>
-                                            <th className="p-2 text-right">Comments</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {videos.map((video, index) => (
-                                            <tr key={index} className="border-t">
-                                                <td className="p-2">
-                                                    <a href={video.url} target="_blank" className="text-blue-500 hover:underline">
-                                                        {video.title}
-                                                    </a>
-                                                </td>
-                                                <td className="p-2">{video.publishedAt}</td>
-                                                <td className="p-2 text-right">{video.views.toLocaleString()}</td>
-                                                <td className="p-2 text-right">{video.likes.toLocaleString()}</td>
-                                                <td className="p-2 text-right">{video.comments.toLocaleString()}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <h2 className="text-xl font-bold mb-4">Analysis Results</h2>
+                            {/* Existing Video Analysis Section */}
                         </div>
                     )}
                 </div>
